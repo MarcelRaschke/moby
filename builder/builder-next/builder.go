@@ -40,6 +40,7 @@ import (
 	"google.golang.org/grpc"
 	grpcmetadata "google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
+	"tags.cncf.io/container-device-interface/pkg/cdi"
 )
 
 type errMultipleFilterValues struct{}
@@ -97,7 +98,7 @@ type Opt struct {
 	ContainerdAddress   string
 	ContainerdNamespace string
 	Callbacks           exporter.BuildkitCallbacks
-	CDISpecDirs         []string
+	CDICache            *cdi.Cache
 }
 
 // Builder can build using BuildKit backend
@@ -368,7 +369,7 @@ func (b *Builder) Build(ctx context.Context, opt backend.BuildConfig) (*builder.
 	ulimits, err := toBuildkitUlimits(opt.Options.Ulimits)
 	if err != nil {
 		return nil, err
-	} else if len(ulimits) > 0 {
+	} else if ulimits != "" {
 		frontendAttrs["ulimit"] = ulimits
 	}
 

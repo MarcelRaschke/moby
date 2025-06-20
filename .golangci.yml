@@ -3,7 +3,7 @@ version: "2"
 run:
   # prevent golangci-lint from deducting the go version to lint for through go.mod,
   # which causes it to fallback to go1.17 semantics.
-  go: "1.24.3"
+  go: "1.24.4"
   concurrency: 2
   # Only supported with go modules enabled (build flag -mod=vendor only valid when using modules)
   # modules-download-mode: vendor
@@ -21,12 +21,14 @@ linters:
     - dogsled                   # Detects assignments with too many blank identifiers.
     - dupword                   # Detects duplicate words.
     - durationcheck             # Detect cases where two time.Duration values are being multiplied in possibly erroneous ways.
+    - errorlint                 # Detects code that will cause problems with the error wrapping scheme introduced in Go 1.13.
     - errchkjson                # Detects unsupported types passed to json encoding functions and reports if checks for the returned error can be omitted.
     - exhaustive                # Detects missing options in enum switch statements.
     - exptostd                  # Detects functions from golang.org/x/exp/ that can be replaced by std functions.
     - fatcontext                # Detects nested contexts in loops and function literals.
     - forbidigo
     - gocheckcompilerdirectives # Detects invalid go compiler directive comments (//go:).
+    - gocritic                  # Detects for bugs, performance and style issues.
     - gosec                     # Detects security problems.
     - govet
     - iface                     # Detects incorrect use of interfaces. Currently only used for "identical" interfaces in the same package.
@@ -42,6 +44,7 @@ linters:
     - revive                    # Metalinter; drop-in replacement for golint.
     - spancheck                 # Detects mistakes with OpenTelemetry/Census spans.
     - staticcheck
+    - thelper
     - unconvert                 # Detects unnecessary type conversions.
     - unused
     - usestdlibvars             # Detects the possibility to use variables/constants from the Go standard library.
@@ -73,6 +76,13 @@ linters:
         - "false"   # some tests use this as expected output
         - "root"    # for tests using "ls" output with files owned by "root:root"
 
+    errorlint:
+      # Check whether fmt.Errorf uses the %w verb for formatting errors.
+      # See the https://github.com/polyfloyd/go-errorlint for caveats.
+      errorf: false
+      # Check for plain type assertions and type switches.
+      asserts: false
+
     exhaustive:
       # Program elements to check for exhaustiveness.
       # Default: [ switch ]
@@ -101,6 +111,56 @@ linters:
           pattern: ^nlwrap.Handle.(BridgeVlanList|ChainList|ClassList|ConntrackDeleteFilter$|DevLinkGetDeviceList|DevLinkGetAllPortList|DevlinkGetDeviceParams|FilterList|FouList|GenlFamilyList|GTPPDPList|LinkByAlias|LinkSubscribeWithOptions|NeighList$|NeighProxyList|NeighListExecute|NeighSubscribeWithOptions|LinkGetProtinfo|QdiscList|RdmaLinkList|RdmaLinkByName|RdmaLinkDel|RouteListFilteredIter|RuleListFiltered$|RouteSubscribeWithOptions|RuleList$|RuleListFiltered|SocketGet|SocketDiagTCPInfo|SocketDiagTCP|SocketDiagUDPInfo|SocketDiagUDP|UnixSocketDiagInfo|UnixSocketDiag|VDPAGetDevConfigList|VDPAGetDevList|VDPAGetMGMTDevList)
           msg: Add a wrapper to nlwrap.Handle for EINTR handling and update the list in .golangci.yml.
       analyze-types: true
+
+    gocritic:
+      disabled-checks:
+        - appendAssign
+        - appendCombine
+        - assignOp
+        - builtinShadow
+        - builtinShadowDecl
+        - captLocal
+        - commentedOutCode
+        - deferInLoop
+        - dupImport
+        - dupSubExpr
+        - elseif
+        - emptyFallthrough
+        - equalFold
+        - evalOrder
+        - exitAfterDefer
+        - exposedSyncMutex
+        - filepathJoin
+        - hexLiteral
+        - hugeParam
+        - ifElseChain
+        - importShadow
+        - indexAlloc
+        - methodExprCall
+        - nestingReduce
+        - nilValReturn
+        - octalLiteral
+        - paramTypeCombine
+        - preferStringWriter
+        - ptrToRefParam
+        - rangeValCopy
+        - redundantSprint
+        - regexpMust
+        - regexpSimplify
+        - singleCaseSwitch
+        - sloppyReassign
+        - stringXbytes
+        - typeAssertChain
+        - typeDefFirst
+        - typeUnparen
+        - uncheckedInlineErr
+        - unlambda
+        - unnamedResult
+        - unnecessaryDefer
+        - unslice
+        - valSwap
+        - whyNoLint
+      enable-all: true
 
     gosec:
       excludes:
@@ -164,6 +224,30 @@ linters:
         - record-error    # check that `span.RecordError(err)` is called when an error is returned
         - set-status      # check that `span.SetStatus(codes.Error, msg)` is called when an error is returned
 
+    thelper:
+      test:
+        # Check *testing.T is first param (or after context.Context) of helper function.
+        first: false
+        # Check t.Helper() begins helper function.
+        begin: false
+      benchmark:
+        # Check *testing.B is first param (or after context.Context) of helper function.
+        first: false
+        # Check b.Helper() begins helper function.
+        begin: false
+      tb:
+        # Check *testing.TB is first param (or after context.Context) of helper function.
+        first: false
+        # Check *testing.TB param has name tb.
+        name: false
+        # Check tb.Helper() begins helper function.
+        begin: false
+      fuzz:
+        # Check *testing.F is first param (or after context.Context) of helper function.
+        first: false
+        # Check f.Helper() begins helper function.
+        begin: false
+
     usestdlibvars:
       # Suggest the use of http.MethodXX.
       http-method: true
@@ -220,7 +304,7 @@ linters:
           - staticcheck
 
         # FIXME(thaJeztah): ignoring these transitional utilities until BuildKit is vendored with https://github.com/moby/moby/pull/49743
-      - text: "SA1019: idtools\\.(ToUserIdentityMapping|FromUserIdentityMapping) is deprecated"
+      - text: "SA1019: idtools\\.(ToUserIdentityMapping|FromUserIdentityMapping|IdentityMapping) is deprecated"
         linters:
           - staticcheck
 

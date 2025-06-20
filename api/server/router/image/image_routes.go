@@ -15,7 +15,6 @@ import (
 	"github.com/docker/docker/api"
 	"github.com/docker/docker/api/server/httputils"
 	"github.com/docker/docker/api/types/backend"
-	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	imagetypes "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
@@ -27,8 +26,6 @@ import (
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/progress"
 	"github.com/docker/docker/pkg/streamformatter"
-	"github.com/docker/go-connections/nat"
-	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -113,7 +110,7 @@ func (ir *imageRouter) postImagesCreate(ctx context.Context, w http.ResponseWrit
 			return errdefs.InvalidParameter(err)
 		}
 
-		if len(comment) == 0 {
+		if comment == "" {
 			comment = "Imported from " + src
 		}
 
@@ -370,12 +367,20 @@ func (ir *imageRouter) getImagesByName(ctx context.Context, w http.ResponseWrite
 		return errdefs.InvalidParameter(errors.New("conflicting options: manifests and platform options cannot both be set"))
 	}
 
-	imageInspect, err := ir.backend.ImageInspect(ctx, vars["name"], backend.ImageInspectOpts{
+	resp, err := ir.backend.ImageInspect(ctx, vars["name"], backend.ImageInspectOpts{
 		Manifests: manifests,
 		Platform:  platform,
 	})
 	if err != nil {
 		return err
+	}
+
+	// inspectResponse preserves fields in the response that have an
+	// "omitempty" in the OCI spec, but didn't omit such fields in
+	// legacy responses before API v1.50.
+	imageInspect := &inspectCompatResponse{
+		InspectResponse: resp,
+		legacyConfig:    legacyConfigFields["current"],
 	}
 
 	// Make sure we output empty arrays instead of nil. While Go nil slice is functionally equivalent to an empty slice,
@@ -405,14 +410,7 @@ func (ir *imageRouter) getImagesByName(ctx context.Context, w http.ResponseWrite
 		imageInspect.Descriptor = nil
 	}
 	if versions.LessThan(version, "1.50") {
-		type imageInspectLegacy struct {
-			imagetypes.InspectResponse
-			LegacyConfig *container.Config `json:"Config"`
-		}
-		return httputils.WriteJSON(w, http.StatusOK, imageInspectLegacy{
-			InspectResponse: *imageInspect,
-			LegacyConfig:    dockerOCIImageConfigToContainerConfig(*imageInspect.Config),
-		})
+		imageInspect.legacyConfig = legacyConfigFields["v1.49"]
 	}
 
 	return httputils.WriteJSON(w, http.StatusOK, imageInspect)
@@ -461,6 +459,7 @@ func (ir *imageRouter) getImagesJSON(ctx context.Context, w http.ResponseWriter,
 	useNone := versions.LessThan(version, "1.43")
 	withVirtualSize := versions.LessThan(version, "1.44")
 	noDescriptor := versions.LessThan(version, "1.48")
+	noContainers := versions.LessThan(version, "1.51")
 	for _, img := range images {
 		if useNone {
 			if len(img.RepoTags) == 0 && len(img.RepoDigests) == 0 {
@@ -480,6 +479,9 @@ func (ir *imageRouter) getImagesJSON(ctx context.Context, w http.ResponseWriter,
 		}
 		if noDescriptor {
 			img.Descriptor = nil
+		}
+		if noContainers {
+			img.Containers = -1
 		}
 	}
 
@@ -597,28 +599,4 @@ func validateRepoName(name reference.Named) error {
 		return fmt.Errorf("'%s' is a reserved name", familiarName)
 	}
 	return nil
-}
-
-// FIXME(thaJeztah): this is a copy of dockerOCIImageConfigToContainerConfig in daemon/containerd: https://github.com/moby/moby/blob/6b617699c500522aa6526cfcae4558333911b11f/daemon/containerd/imagespec.go#L107-L128
-func dockerOCIImageConfigToContainerConfig(cfg dockerspec.DockerOCIImageConfig) *container.Config {
-	exposedPorts := make(nat.PortSet, len(cfg.ExposedPorts))
-	for k, v := range cfg.ExposedPorts {
-		exposedPorts[nat.Port(k)] = v
-	}
-
-	return &container.Config{
-		Entrypoint:   cfg.Entrypoint,
-		Env:          cfg.Env,
-		Cmd:          cfg.Cmd,
-		User:         cfg.User,
-		WorkingDir:   cfg.WorkingDir,
-		ExposedPorts: exposedPorts,
-		Volumes:      cfg.Volumes,
-		Labels:       cfg.Labels,
-		ArgsEscaped:  cfg.ArgsEscaped, //nolint:staticcheck // Ignore SA1019. Need to keep it in image.
-		StopSignal:   cfg.StopSignal,
-		Healthcheck:  cfg.Healthcheck,
-		OnBuild:      cfg.OnBuild,
-		Shell:        cfg.Shell,
-	}
 }
