@@ -19,8 +19,10 @@ import (
 	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/drivers/bridge/internal/firewaller"
 	"github.com/docker/docker/libnetwork/drivers/bridge/internal/iptabler"
+	"github.com/docker/docker/libnetwork/drivers/bridge/internal/nftabler"
 	"github.com/docker/docker/libnetwork/drivers/bridge/internal/rlkclient"
 	"github.com/docker/docker/libnetwork/internal/netiputil"
+	"github.com/docker/docker/libnetwork/internal/nftables"
 	"github.com/docker/docker/libnetwork/iptables"
 	"github.com/docker/docker/libnetwork/netlabel"
 	"github.com/docker/docker/libnetwork/netutils"
@@ -544,6 +546,9 @@ func (d *driver) configure(option map[string]interface{}) error {
 }
 
 var newFirewaller = func(ctx context.Context, config firewaller.Config) (firewaller.Firewaller, error) {
+	if nftables.Enabled() {
+		return nftabler.NewNftabler(ctx, config)
+	}
 	return iptabler.NewIptabler(ctx, config)
 }
 
@@ -669,7 +674,7 @@ func parseNetworkOptions(id string, option options.Generic) (*networkConfigurati
 	}
 
 	if (config.GwModeIPv4.isolated() || config.GwModeIPv6.isolated()) && !config.Internal {
-		return nil, fmt.Errorf("gateway mode 'isolated' can only be used for an internal network")
+		return nil, errors.New("gateway mode 'isolated' can only be used for an internal network")
 	}
 
 	if !exists {
@@ -956,7 +961,7 @@ func (d *driver) deleteNetwork(nid string) error {
 		// it's not in d.networks. To prevent the driver's state from getting out of step
 		// with its parent, make sure it's not in the store before reporting that it does
 		// not exist.
-		if err := d.storeDelete(&networkConfiguration{ID: nid}); err != nil && err != datastore.ErrKeyNotFound {
+		if err := d.storeDelete(&networkConfiguration{ID: nid}); err != nil && !errors.Is(err, datastore.ErrKeyNotFound) {
 			log.G(context.TODO()).WithFields(log.Fields{
 				"error":   err,
 				"network": nid,

@@ -39,12 +39,14 @@ func TestCleanupIptableRules(t *testing.T) {
 		expRemoved bool
 	}{
 		{name: dockerChain, table: iptables.Nat, expRemoved: true},
-		// The filter-FORWARD chain has references to dockerChain and isolationChain1,
-		// so the chains won't be removed - but they should be flushed. (This has
-		// long/always been the case for the daemon, its filter-FORWARD rules aren't
-		// removed.)
-		{name: dockerChain, table: iptables.Filter},
-		{name: isolationChain1, table: iptables.Filter},
+		// The filter-FORWARD chain has a reference to dockerForwardChain, so it won't be
+		// removed - but it should be flushed. (This has long/always been the case for
+		// the daemon, its filter-FORWARD rules aren't removed.)
+		{name: DockerForwardChain, table: iptables.Filter},
+		{name: dockerCTChain, table: iptables.Filter, expRemoved: true},
+		{name: dockerBridgeChain, table: iptables.Filter, expRemoved: true},
+		{name: dockerChain, table: iptables.Filter, expRemoved: true},
+		{name: dockerInternalChain, table: iptables.Filter, expRemoved: true},
 	}
 
 	ipVersions := []iptables.IPVersion{iptables.IPv4, iptables.IPv6}
@@ -159,7 +161,7 @@ func testIptabler(t *testing.T, tn string, config firewaller.Config, netConfig f
 
 	stripComments := func(text string) string {
 		lines := strings.Split(text, "\n")
-		lines = slices.DeleteFunc(lines, func(l string) bool { return len(l) > 0 && l[0] == '#' })
+		lines = slices.DeleteFunc(lines, func(l string) bool { return l != "" && l[0] == '#' })
 		return strings.Join(lines, "\n")
 	}
 

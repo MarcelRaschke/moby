@@ -5,6 +5,7 @@ package libnetwork
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"sort"
@@ -81,7 +82,7 @@ func getBindAddr(ifaceName string) (net.IP, error) {
 		return addrIP, nil
 	}
 
-	return nil, fmt.Errorf("failed to get bind address")
+	return nil, errors.New("failed to get bind address")
 }
 
 // resolveAddr resolves the given address, which can be one of, and
@@ -836,7 +837,7 @@ func (n *Network) handleDriverTableEvent(ev events.Event) {
 		tname = event.Table
 		key = event.Key
 		value = event.Value
-		etype = driverapi.Delete
+		etype = driverapi.Update
 	}
 
 	d.EventNotify(etype, n.ID(), tname, key, value)

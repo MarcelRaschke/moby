@@ -74,6 +74,9 @@ func (daemon *Daemon) containerStop(ctx context.Context, ctr *container.Containe
 	defer func() {
 		if retErr == nil {
 			daemon.LogContainerEvent(ctr, events.ActionStop)
+			// Ensure container status changes are committed by handler of container exit before returning control to the caller
+			ctr.Lock()
+			defer ctr.Unlock()
 		}
 	}()
 

@@ -431,7 +431,7 @@ func (l *logStream) Log(msg *logger.Message) error {
 	// (i.e. returns false) in this case.
 	ctx := context.TODO()
 	if err := l.messages.Enqueue(ctx, msg); err != nil {
-		if err == loggerutils.ErrQueueClosed {
+		if errors.Is(err, loggerutils.ErrQueueClosed) {
 			return errClosed
 		}
 		return err
@@ -857,7 +857,7 @@ func (b *eventBatch) add(event wrappedEvent, size int) bool {
 
 	// verify we are still within service limits
 	switch {
-	case len(b.batch)+1 > maximumLogEventsPerPut:
+	case len(b.batch) >= maximumLogEventsPerPut:
 		return false
 	case b.bytes+addBytes > maximumBytesPerPut:
 		return false
