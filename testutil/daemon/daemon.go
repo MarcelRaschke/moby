@@ -24,7 +24,7 @@ import (
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/container"
+	"github.com/docker/docker/daemon/container"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/pkg/tailfile"
@@ -153,7 +153,7 @@ func NewDaemon(workingDir string, ops ...Option) (*Daemon, error) {
 		op(d)
 	}
 
-	if len(d.resolvConfContent) > 0 {
+	if d.resolvConfContent != "" {
 		path := filepath.Join(d.Folder, "resolv.conf")
 		if err := os.WriteFile(path, []byte(d.resolvConfContent), 0644); err != nil {
 			return nil, fmt.Errorf("failed to write docker resolv.conf to %q: %v", path, err)
@@ -572,7 +572,7 @@ func (d *Daemon) StartWithLogFile(out *os.File, providedArgs ...string) error {
 		Transport: clientConfig.transport,
 	}
 
-	req, err := http.NewRequest(http.MethodGet, "/_ping", nil)
+	req, err := http.NewRequest(http.MethodGet, "/_ping", http.NoBody)
 	if err != nil {
 		return errors.Wrapf(err, "[%s] could not create new request", d.id)
 	}
@@ -693,7 +693,7 @@ func (d *Daemon) Stop(t testing.TB) {
 	t.Helper()
 	err := d.StopWithError()
 	if err != nil {
-		if err != errDaemonNotStarted {
+		if !errors.Is(err, errDaemonNotStarted) {
 			t.Fatalf("[%s] error while stopping the daemon: %v", d.id, err)
 		} else {
 			t.Logf("[%s] daemon is not started", d.id)
@@ -947,7 +947,7 @@ func (d *Daemon) queryRootDir() (string, error) {
 		Transport: clientConfig.transport,
 	}
 
-	req, err := http.NewRequest(http.MethodGet, "/info", nil)
+	req, err := http.NewRequest(http.MethodGet, "/info", http.NoBody)
 	if err != nil {
 		return "", err
 	}

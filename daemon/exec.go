@@ -14,8 +14,8 @@ import (
 	"github.com/docker/docker/api/types/backend"
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/container"
-	"github.com/docker/docker/container/stream"
+	"github.com/docker/docker/daemon/container"
+	"github.com/docker/docker/daemon/internal/stream"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/pools"
 	"github.com/moby/sys/signal"
@@ -141,10 +141,10 @@ func (daemon *Daemon) ContainerExecCreate(name string, options *containertypes.E
 		return "", err
 	}
 	execConfig.Env = container.ReplaceOrAppendEnvValues(cntr.CreateDaemonEnvironment(options.Tty, linkedEnv), options.Env)
-	if len(execConfig.User) == 0 {
+	if execConfig.User == "" {
 		execConfig.User = cntr.Config.User
 	}
-	if len(execConfig.WorkingDir) == 0 {
+	if execConfig.WorkingDir == "" {
 		execConfig.WorkingDir = cntr.Config.WorkingDir
 	}
 

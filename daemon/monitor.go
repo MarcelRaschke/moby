@@ -10,11 +10,11 @@ import (
 	"github.com/containerd/log"
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/container"
 	"github.com/docker/docker/daemon/config"
-	"github.com/docker/docker/internal/metrics"
-	libcontainerdtypes "github.com/docker/docker/libcontainerd/types"
-	"github.com/docker/docker/restartmanager"
+	"github.com/docker/docker/daemon/container"
+	libcontainerdtypes "github.com/docker/docker/daemon/internal/libcontainerd/types"
+	"github.com/docker/docker/daemon/internal/metrics"
+	"github.com/docker/docker/daemon/internal/restartmanager"
 	"github.com/pkg/errors"
 )
 
@@ -153,7 +153,7 @@ func (daemon *Daemon) handleContainerExit(c *container.Container, e *libcontaine
 				c.CheckpointTo(context.TODO(), daemon.containersReplica)
 				c.Unlock()
 				defer daemon.autoRemove(&cfg.Config, c)
-				if waitErr != restartmanager.ErrRestartCanceled {
+				if !errors.Is(waitErr, restartmanager.ErrRestartCanceled) {
 					log.G(ctx).Errorf("restartmanger wait error: %+v", waitErr)
 				}
 			}

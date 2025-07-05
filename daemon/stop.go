@@ -7,7 +7,7 @@ import (
 	"github.com/containerd/log"
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/container"
+	"github.com/docker/docker/daemon/container"
 	"github.com/docker/docker/errdefs"
 	"github.com/moby/sys/signal"
 	"github.com/pkg/errors"
@@ -74,6 +74,9 @@ func (daemon *Daemon) containerStop(ctx context.Context, ctr *container.Containe
 	defer func() {
 		if retErr == nil {
 			daemon.LogContainerEvent(ctr, events.ActionStop)
+			// Ensure container status changes are committed by handler of container exit before returning control to the caller
+			ctr.Lock()
+			defer ctr.Unlock()
 		}
 	}()
 

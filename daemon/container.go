@@ -12,8 +12,8 @@ import (
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	networktypes "github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/container"
 	"github.com/docker/docker/daemon/config"
+	"github.com/docker/docker/daemon/container"
 	"github.com/docker/docker/daemon/network"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/image"
@@ -36,7 +36,7 @@ import (
 //     unique enough to only return a single container object
 //     If none of these searches succeed, an error is returned
 func (daemon *Daemon) GetContainer(prefixOrName string) (*container.Container, error) {
-	if len(prefixOrName) == 0 {
+	if prefixOrName == "" {
 		return nil, errors.WithStack(invalidIdentifier(prefixOrName))
 	}
 
@@ -178,8 +178,8 @@ func getEntrypointAndArgs(configEntrypoint, configCmd []string) (string, []strin
 
 // GetByName returns a container given a name.
 func (daemon *Daemon) GetByName(name string) (*container.Container, error) {
-	if len(name) == 0 {
-		return nil, fmt.Errorf("No container name supplied")
+	if name == "" {
+		return nil, errors.New("No container name supplied")
 	}
 	fullName := name
 	if name[0] != '/' {
@@ -252,7 +252,7 @@ func validateContainerConfig(config *containertypes.Config) error {
 	if err := translateWorkingDir(config); err != nil {
 		return err
 	}
-	if len(config.StopSignal) > 0 {
+	if config.StopSignal != "" {
 		if _, err := signal.ParseSignal(config.StopSignal); err != nil {
 			return err
 		}

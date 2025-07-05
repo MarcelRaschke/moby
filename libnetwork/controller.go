@@ -247,7 +247,7 @@ func (c *Controller) SetKeys(keys []*types.EncryptionKey) error {
 	for _, key := range keys {
 		if key.Subsystem != subsysGossip &&
 			key.Subsystem != subsysIPSec {
-			return fmt.Errorf("key received for unrecognized subsystem")
+			return errors.New("key received for unrecognized subsystem")
 		}
 		subsysKeys[key.Subsystem]++
 	}
@@ -1076,7 +1076,7 @@ func (c *Controller) loadDriver(networkType string) error {
 	}
 
 	if err != nil {
-		if errors.Cause(err) == plugins.ErrNotFound {
+		if errors.Is(err, plugins.ErrNotFound) {
 			return types.NotFoundErrorf("%v", err)
 		}
 		return err
@@ -1095,7 +1095,7 @@ func (c *Controller) loadIPAMDriver(name string) error {
 	}
 
 	if err != nil {
-		if errors.Cause(err) == plugins.ErrNotFound {
+		if errors.Is(err, plugins.ErrNotFound) {
 			return types.NotFoundErrorf("%v", err)
 		}
 		return err

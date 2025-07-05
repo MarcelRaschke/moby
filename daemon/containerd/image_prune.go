@@ -13,7 +13,7 @@ import (
 	"github.com/distribution/reference"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/container"
+	"github.com/docker/docker/daemon/container"
 	"github.com/docker/docker/errdefs"
 	"github.com/hashicorp/go-multierror"
 	"github.com/opencontainers/go-digest"
@@ -108,7 +108,7 @@ func (i *ImageService) pruneUnused(ctx context.Context, filterFunc imageFilterFu
 	// Images considered for pruning.
 	imagesToPrune := map[string]c8dimages.Image{}
 	for _, img := range allImages {
-		digestRefCount[img.Target.Digest] += 1
+		digestRefCount[img.Target.Digest]++
 
 		if !danglingOnly || isDanglingImage(img) {
 			canBePruned := filterFunc(img)
@@ -138,7 +138,7 @@ func (i *ImageService) pruneUnused(ctx context.Context, filterFunc imageFilterFu
 		dgst := img.Target.Digest
 
 		if digestRefCount[dgst] > 1 {
-			digestRefCount[dgst] -= 1
+			digestRefCount[dgst]--
 			continue
 		}
 

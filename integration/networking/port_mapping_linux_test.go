@@ -798,6 +798,140 @@ func TestDirectRoutingOpenPorts(t *testing.T) {
 	}
 }
 
+// TestRoutedNonGateway checks whether a published container port on an endpoint in a
+// gateway mode "routed" network is accessible when the routed network is not providing
+// the container's default gateway.
+func TestRoutedNonGateway(t *testing.T) {
+	skip.If(t, testEnv.IsRootless())
+	skip.If(t, networking.FirewalldRunning(), "Firewalld's IPv6_rpfilter=yes breaks IPv6 direct routing from L3Segment")
+
+	ctx := setupTest(t)
+	d := daemon.New(t)
+	d.StartWithBusybox(ctx, t)
+	defer d.Stop(t)
+	c := d.NewClientT(t)
+	defer c.Close()
+
+	// Simulate the remote host.
+	l3 := networking.NewL3Segment(t, "test-routed-open-ports",
+		netip.MustParsePrefix("192.168.124.1/24"),
+		netip.MustParsePrefix("fdc0:36dc:a4dd::1/64"))
+	defer l3.Destroy(t)
+	// "docker" is the host where dockerd is running.
+	const dockerHostIPv4 = "192.168.124.2"
+	const dockerHostIPv6 = "fdc0:36dc:a4dd::2"
+	l3.AddHost(t, "docker", networking.CurrentNetns, "eth-test",
+		netip.MustParsePrefix(dockerHostIPv4+"/24"),
+		netip.MustParsePrefix(dockerHostIPv6+"/64"))
+	// "remote" simulates the remote host.
+	l3.AddHost(t, "remote", "test-remote-host", "eth0",
+		netip.MustParsePrefix("192.168.124.3/24"),
+		netip.MustParsePrefix("fdc0:36dc:a4dd::3/64"))
+	// Add default routes from the "remote" Host to the "docker" Host.
+	l3.Hosts["remote"].MustRun(t, "ip", "route", "add", "default", "via", "192.168.124.2")
+	l3.Hosts["remote"].MustRun(t, "ip", "-6", "route", "add", "default", "via", "fdc0:36dc:a4dd::2")
+
+	// Create a dual-stack NAT'd network.
+	const natNetName = "ds_nat"
+	network.CreateNoError(ctx, t, c, natNetName,
+		network.WithIPv6(),
+		network.WithOption(bridge.BridgeName, natNetName),
+	)
+	defer network.RemoveNoError(ctx, t, c, natNetName)
+
+	// Create a dual-stack routed network.
+	const routedNetName = "ds_routed"
+	network.CreateNoError(ctx, t, c, routedNetName,
+		network.WithIPv6(),
+		network.WithOption(bridge.BridgeName, routedNetName),
+		network.WithOption(bridge.IPv4GatewayMode, "routed"),
+		network.WithOption(bridge.IPv6GatewayMode, "routed"),
+	)
+	defer network.RemoveNoError(ctx, t, c, routedNetName)
+
+	// Run a web server attached to both networks, and make sure the nat
+	// network is selected as the gateway.
+	ctrId := container.Run(ctx, t, c,
+		container.WithCmd("httpd", "-f"),
+		container.WithExposedPorts("80/tcp"),
+		container.WithPortMap(nat.PortMap{"80/tcp": {{HostPort: "8080"}}}),
+		container.WithNetworkMode(natNetName),
+		container.WithNetworkMode(routedNetName),
+		container.WithEndpointSettings(natNetName, &networktypes.EndpointSettings{GwPriority: 1}),
+		container.WithEndpointSettings(routedNetName, &networktypes.EndpointSettings{GwPriority: 0}))
+	defer container.Remove(ctx, t, c, ctrId, containertypes.RemoveOptions{Force: true})
+
+	testHttp := func(t *testing.T, addr, port, expOut string) {
+		t.Helper()
+		l3.Hosts["remote"].Do(t, func() {
+			t.Helper()
+			t.Parallel()
+			u := "http://" + net.JoinHostPort(addr, port)
+			res := icmd.RunCommand("curl", "--max-time", "3", "--show-error", "--silent", u)
+			assert.Check(t, is.Contains(res.Combined(), expOut), "url:%s", u)
+		})
+	}
+
+	const (
+		httpSuccess = "404 Not Found"
+		httpFail    = "Connection timed out"
+	)
+
+	insp := container.Inspect(ctx, t, c, ctrId)
+	testcases := []struct {
+		name    string
+		addr    string
+		port    string
+		expHttp string
+	}{
+		{
+			name:    "nat/published/v4",
+			addr:    dockerHostIPv4,
+			port:    "8080",
+			expHttp: httpSuccess,
+		},
+		{
+			name:    "nat/published/v6",
+			addr:    dockerHostIPv6,
+			port:    "8080",
+			expHttp: httpSuccess,
+		},
+		{
+			name:    "nat/direct/v4",
+			addr:    insp.NetworkSettings.Networks[natNetName].IPAddress,
+			port:    "80",
+			expHttp: httpFail,
+		},
+		{
+			name:    "nat/direct/v6",
+			addr:    insp.NetworkSettings.Networks[natNetName].GlobalIPv6Address,
+			port:    "80",
+			expHttp: httpFail,
+		},
+		{
+			name:    "routed/direct/v4",
+			addr:    insp.NetworkSettings.Networks[routedNetName].IPAddress,
+			port:    "80",
+			expHttp: httpFail,
+		},
+		{
+			name:    "routed/direct/v6",
+			addr:    insp.NetworkSettings.Networks[routedNetName].GlobalIPv6Address,
+			port:    "80",
+			expHttp: httpFail,
+		},
+	}
+
+	// Wrap parallel tests, otherwise defer statements run before tests finish.
+	t.Run("w", func(t *testing.T) {
+		for _, tc := range testcases {
+			t.Run(tc.name, func(t *testing.T) {
+				testHttp(t, tc.addr, tc.port, tc.expHttp)
+			})
+		}
+	})
+}
+
 // TestAccessPublishedPortFromAnotherNetwork checks that a container can access
 // ports published on the host by a container attached to a different network
 // using both its gateway IP address, and the host IP address.
@@ -1279,6 +1413,49 @@ func TestSkipRawRules(t *testing.T) {
 				res6 := icmd.RunCommand("ip6tables", "-S", "-t", "raw")
 				golden.Assert(t, res6.Stdout(), t.Name()+"_ipv6.golden")
 			})
+		})
+	}
+}
+
+// Regression test for https://github.com/docker/compose/issues/12846
+func TestMixAnyWithSpecificHostAddrs(t *testing.T) {
+	ctx := setupTest(t)
+
+	for _, proto := range []string{"tcp", "udp"} {
+		t.Run(proto, func(t *testing.T) {
+			// Start a new daemon, so the port allocator will start with new/empty ephemeral port ranges,
+			// making a clash more likely.
+			d := daemon.New(t)
+			d.StartWithBusybox(ctx, t)
+			defer d.Stop(t)
+			c := d.NewClientT(t)
+			defer c.Close()
+
+			ctrId := container.Run(ctx, t, c,
+				container.WithExposedPorts("80/"+proto, "81/"+proto, "82/"+proto),
+				container.WithPortMap(nat.PortMap{
+					nat.Port("81/" + proto): {{}},
+					nat.Port("82/" + proto): {{}},
+					nat.Port("80/" + proto): {{HostIP: "127.0.0.1"}},
+				}),
+			)
+			defer c.ContainerRemove(ctx, ctrId, containertypes.RemoveOptions{Force: true})
+
+			insp := container.Inspect(ctx, t, c, ctrId)
+			hostPorts := map[string]struct{}{}
+			for cp, hps := range insp.NetworkSettings.Ports {
+				// Check each of the container ports is mapped to a different host port.
+				p := hps[0].HostPort
+				if _, ok := hostPorts[p]; ok {
+					t.Errorf("host port %s is mapped to different container ports: %v", p, insp.NetworkSettings.Ports)
+				}
+				hostPorts[p] = struct{}{}
+
+				// For this container port, check the same host port is mapped for each host address (0.0.0.0 and ::).
+				for _, hp := range hps {
+					assert.Check(t, p == hp.HostPort, "container port %d is mapped to different host ports: %v", cp, hps)
+				}
+			}
 		})
 	}
 }

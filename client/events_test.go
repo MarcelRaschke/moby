@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -58,7 +59,7 @@ func TestEvents(t *testing.T) {
 	const expectedURL = "/events"
 
 	fltrs := filters.NewArgs(filters.Arg("type", string(events.ContainerEventType)))
-	expectedFiltersJSON := fmt.Sprintf(`{"type":{"%s":true}}`, events.ContainerEventType)
+	expectedFiltersJSON := fmt.Sprintf(`{"type":{%q:true}}`, events.ContainerEventType)
 
 	eventsCases := []struct {
 		options             events.ListOptions
@@ -143,7 +144,7 @@ func TestEvents(t *testing.T) {
 		for {
 			select {
 			case err := <-errs:
-				if err != nil && err != io.EOF {
+				if err != nil && !errors.Is(err, io.EOF) {
 					t.Fatal(err)
 				}
 

@@ -23,7 +23,7 @@ on:
   pull_request:
 
 env:
-  GO_VERSION: "1.24.3"
+  GO_VERSION: "1.24.4"
   DESTDIR: ./build
   SETUP_BUILDX_VERSION: edge
   SETUP_BUILDKIT_IMAGE: moby/buildkit:latest
@@ -220,7 +220,6 @@ jobs:
           & docker build `
             --build-arg WINDOWS_BASE_IMAGE `
             --build-arg WINDOWS_BASE_IMAGE_TAG `
-            --build-arg GO_VERSION `
             -t ${{ env.TEST_IMAGE_NAME }} `
             -f Dockerfile.windows .
 

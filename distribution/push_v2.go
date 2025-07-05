@@ -294,7 +294,7 @@ func (pd *pushDescriptor) Upload(ctx context.Context, progressOutput progress.Ou
 		log.G(ctx).Debugf("attempting to mount layer %s (%s) from %s", diffID, mountCandidate.Digest, mountCandidate.SourceRepository)
 		createOpts := []distribution.BlobCreateOption{}
 
-		if len(mountCandidate.SourceRepository) > 0 {
+		if mountCandidate.SourceRepository != "" {
 			namedRef, err := reference.ParseNormalizedNamed(mountCandidate.SourceRepository)
 			if err != nil {
 				log.G(ctx).WithError(err).Errorf("failed to parse source repository reference %v", reference.FamiliarString(namedRef))
@@ -359,10 +359,10 @@ func (pd *pushDescriptor) Upload(ctx context.Context, progressOutput progress.Ou
 
 		// when error is unauthorizedError and user don't hasAuthInfo that's the case user don't has right to push layer to register
 		// and he hasn't login either, in this case candidate cache should be removed
-		if len(mountCandidate.SourceRepository) > 0 &&
+		if mountCandidate.SourceRepository != "" &&
 			(!isUnauthorizedError || pd.pushState.hasAuthInfo) &&
 			(metadata.CheckV2MetadataHMAC(&mountCandidate, pd.hmacKey) ||
-				len(mountCandidate.HMAC) == 0) {
+				mountCandidate.HMAC == "") {
 			cause := "blob mount failure"
 			if err != nil {
 				cause = fmt.Sprintf("an error: %v", err.Error())
@@ -488,7 +488,7 @@ func (pd *pushDescriptor) layerAlreadyExists(
 	// filter the metadata
 	candidates := []metadata.V2Metadata{}
 	for _, meta := range v2Metadata {
-		if len(meta.SourceRepository) > 0 && !checkOtherRepositories && meta.SourceRepository != pd.repoName.Name() {
+		if meta.SourceRepository != "" && !checkOtherRepositories && meta.SourceRepository != pd.repoName.Name() {
 			continue
 		}
 		candidates = append(candidates, meta)
@@ -525,8 +525,8 @@ attempts:
 		var err error
 		desc, err = pd.repo.Blobs(ctx).Stat(ctx, dgst)
 		pd.checkedDigests[meta.Digest] = struct{}{}
-		switch err {
-		case nil:
+		switch {
+		case err == nil:
 			if m, ok := digestToMetadata[desc.Digest]; !ok || m.SourceRepository != pd.repoName.Name() || !metadata.CheckV2MetadataHMAC(m, pd.hmacKey) {
 				// cache mapping from this layer's DiffID to the blobsum
 				if err := pd.metadataService.TagAndAdd(diffID, pd.hmacKey, metadata.V2Metadata{
@@ -539,7 +539,7 @@ attempts:
 			desc.MediaType = schema2.MediaTypeLayer
 			exists = true
 			break attempts
-		case distribution.ErrBlobUnknown:
+		case errors.Is(err, distribution.ErrBlobUnknown):
 			if meta.SourceRepository == pd.repoName.Name() {
 				// remove the mapping to the target repository
 				if err := pd.metadataService.Remove(*meta); err != nil {
@@ -595,7 +595,7 @@ func getMaxMountAndExistenceCheckAttempts(layer PushLayer) (maxMountAttempts, ma
 func getRepositoryMountCandidates(
 	repoInfo reference.Named,
 	hmacKey []byte,
-	max int,
+	maxCandidates int,
 	v2Metadata []metadata.V2Metadata,
 ) []metadata.V2Metadata {
 	candidates := []metadata.V2Metadata{}
@@ -612,9 +612,9 @@ func getRepositoryMountCandidates(
 	}
 
 	sortV2MetadataByLikenessAndAge(repoInfo, hmacKey, candidates)
-	if max >= 0 && len(candidates) > max {
+	if maxCandidates >= 0 && len(candidates) > maxCandidates {
 		// select the youngest metadata
-		candidates = candidates[:max]
+		candidates = candidates[:maxCandidates]
 	}
 
 	return candidates

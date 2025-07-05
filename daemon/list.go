@@ -14,7 +14,7 @@ import (
 	"github.com/docker/docker/api/types/backend"
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/container"
+	"github.com/docker/docker/daemon/container"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/image"
 	"github.com/docker/go-connections/nat"
@@ -514,7 +514,7 @@ func includeContainerInList(container *container.Snapshot, filter *listContext) 
 			}
 		}
 
-		volumeExist := fmt.Errorf("volume mounted in container")
+		volumeExist := errors.New("volume mounted in container")
 		err := filter.filters.WalkValues("volume", func(value string) error {
 			if _, exist := volumesByDestination[value]; exist {
 				return volumeExist
@@ -524,7 +524,7 @@ func includeContainerInList(container *container.Snapshot, filter *listContext) 
 			}
 			return nil
 		})
-		if err != volumeExist {
+		if !errors.Is(err, volumeExist) {
 			return excludeContainer
 		}
 	}
@@ -560,7 +560,7 @@ func includeContainerInList(container *container.Snapshot, filter *listContext) 
 			}
 			return nil
 		})
-		if err != networkExist {
+		if !errors.Is(err, networkExist) {
 			return excludeContainer
 		}
 	}

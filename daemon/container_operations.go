@@ -18,11 +18,11 @@ import (
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	networktypes "github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/container"
 	"github.com/docker/docker/daemon/config"
+	"github.com/docker/docker/daemon/container"
+	"github.com/docker/docker/daemon/internal/metrics"
 	"github.com/docker/docker/daemon/network"
 	"github.com/docker/docker/errdefs"
-	"github.com/docker/docker/internal/metrics"
 	"github.com/docker/docker/internal/multierror"
 	"github.com/docker/docker/internal/sliceutil"
 	"github.com/docker/docker/libnetwork"
@@ -92,7 +92,7 @@ func buildSandboxOptions(cfg *config.Config, ctr *container.Container) ([]libnet
 		// config variable
 		if ip == opts.HostGatewayName {
 			if len(cfg.HostGatewayIPs) == 0 {
-				return nil, fmt.Errorf("unable to derive the IP value for host-gateway")
+				return nil, errors.New("unable to derive the IP value for host-gateway")
 			}
 			for _, gip := range cfg.HostGatewayIPs {
 				sboxOptions = append(sboxOptions, libnetwork.OptionExtraHost(host, gip.String()))

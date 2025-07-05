@@ -1,4 +1,5 @@
-//go:build linux
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.23 && linux
 
 package overlay
 
@@ -18,6 +19,7 @@ import (
 	"github.com/docker/docker/internal/nlwrap"
 	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/drivers/overlay/overlayutils"
+	"github.com/docker/docker/libnetwork/internal/countmap"
 	"github.com/docker/docker/libnetwork/internal/netiputil"
 	"github.com/docker/docker/libnetwork/netlabel"
 	"github.com/docker/docker/libnetwork/ns"
@@ -53,6 +55,8 @@ type network struct {
 	endpoints endpointTable
 	driver    *driver
 	joinCnt   int
+	// Ref count of VXLAN Forwarding Database entries programmed into the kernel
+	fdbCnt    countmap.Map[ipmac]
 	sboxInit  bool
 	initEpoch int
 	initErr   error
@@ -82,7 +86,7 @@ func (d *driver) NetworkFree(id string) error {
 
 func (d *driver) CreateNetwork(ctx context.Context, id string, option map[string]interface{}, nInfo driverapi.NetworkInfo, ipV4Data, ipV6Data []driverapi.IPAMData) error {
 	if id == "" {
-		return fmt.Errorf("invalid network id")
+		return errors.New("invalid network id")
 	}
 	if len(ipV4Data) == 0 || ipV4Data[0].Pool.String() == "0.0.0.0/0" {
 		return types.InvalidParameterErrorf("ipv4 pool is empty")
@@ -99,6 +103,7 @@ func (d *driver) CreateNetwork(ctx context.Context, id string, option map[string
 		driver:    d,
 		endpoints: endpointTable{},
 		subnets:   []*subnet{},
+		fdbCnt:    countmap.Map[ipmac]{},
 	}
 
 	vnis := make([]uint32, 0, len(ipV4Data))
@@ -174,7 +179,7 @@ func (d *driver) CreateNetwork(ctx context.Context, id string, option map[string
 
 func (d *driver) DeleteNetwork(nid string) error {
 	if nid == "" {
-		return fmt.Errorf("invalid network id")
+		return errors.New("invalid network id")
 	}
 
 	// Make sure driver resources are initialized before proceeding
@@ -232,14 +237,6 @@ func (d *driver) DeleteNetwork(nid string) error {
 		}
 	}
 
-	return nil
-}
-
-func (d *driver) ProgramExternalConnectivity(_ context.Context, nid, eid string, options map[string]interface{}) error {
-	return nil
-}
-
-func (d *driver) RevokeExternalConnectivity(nid, eid string) error {
 	return nil
 }
 
@@ -594,6 +591,7 @@ func (n *network) initSandbox() error {
 
 	// this is needed to let the peerAdd configure the sandbox
 	n.sbox = sbox
+	n.fdbCnt = countmap.Map[ipmac]{}
 
 	return nil
 }

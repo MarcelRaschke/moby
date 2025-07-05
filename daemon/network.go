@@ -16,9 +16,9 @@ import (
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	networktypes "github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/container"
 	clustertypes "github.com/docker/docker/daemon/cluster/provider"
 	"github.com/docker/docker/daemon/config"
+	"github.com/docker/docker/daemon/container"
 	"github.com/docker/docker/daemon/network"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/internal/otelutil"
@@ -252,7 +252,7 @@ func (daemon *Daemon) SetNetworkBootstrapKeys(keys []*lntypes.EncryptionKey) err
 // UpdateAttachment notifies the attacher about the attachment config.
 func (daemon *Daemon) UpdateAttachment(networkName, networkID, containerID string, config *networktypes.NetworkingConfig) error {
 	if daemon.clusterProvider == nil {
-		return fmt.Errorf("cluster provider is not initialized")
+		return errors.New("cluster provider is not initialized")
 	}
 
 	if err := daemon.clusterProvider.UpdateAttachment(networkName, containerID, config); err != nil {
@@ -266,7 +266,7 @@ func (daemon *Daemon) UpdateAttachment(networkName, networkID, containerID strin
 // the container from the network.
 func (daemon *Daemon) WaitForDetachment(ctx context.Context, networkName, networkID, taskID, containerID string) error {
 	if daemon.clusterProvider == nil {
-		return fmt.Errorf("cluster provider is not initialized")
+		return errors.New("cluster provider is not initialized")
 	}
 
 	return daemon.clusterProvider.WaitForDetachment(ctx, networkName, networkID, taskID, containerID)

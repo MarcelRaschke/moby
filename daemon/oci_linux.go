@@ -14,8 +14,8 @@ import (
 	coci "github.com/containerd/containerd/v2/pkg/oci"
 	"github.com/containerd/log"
 	containertypes "github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/container"
 	dconfig "github.com/docker/docker/daemon/config"
+	"github.com/docker/docker/daemon/container"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/internal/rootless/mountopts"
 	"github.com/docker/docker/internal/rootless/specconv"
@@ -715,7 +715,7 @@ func withCommonOptions(daemon *Daemon, daemonCfg *dconfig.Config, c *container.C
 			return err
 		}
 		cwd := c.Config.WorkingDir
-		if len(cwd) == 0 {
+		if cwd == "" {
 			cwd = "/"
 		}
 		if s.Process == nil {

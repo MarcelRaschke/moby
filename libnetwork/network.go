@@ -99,7 +99,7 @@ type IpamConf struct {
 
 // Validate checks whether the configuration is valid
 func (c *IpamConf) Validate() error {
-	if c.Gateway != "" && nil == net.ParseIP(c.Gateway) {
+	if c.Gateway != "" && net.ParseIP(c.Gateway) == nil {
 		return types.InvalidParameterErrorf("invalid gateway address %s in Ipam configuration", c.Gateway)
 	}
 	return nil
@@ -421,7 +421,7 @@ func (n *Network) applyConfigurationTo(to *Network) error {
 			}
 		}
 	}
-	if len(n.ipamType) != 0 {
+	if n.ipamType != "" {
 		to.ipamType = n.ipamType
 	}
 	if len(n.ipamOptions) > 0 {
@@ -1051,7 +1051,7 @@ func (n *Network) delete(force bool, rmLBEndpoint bool) error {
 			name: n.name,
 			id:   n.id,
 			endpoints: sliceutil.Map(eps, func(ep *Endpoint) string {
-				return fmt.Sprintf(`name:"%s" id:"%s"`, ep.name, stringid.TruncateID(ep.id))
+				return fmt.Sprintf(`name:%q id:%q`, ep.name, stringid.TruncateID(ep.id))
 			}),
 		}
 	}
@@ -1619,7 +1619,7 @@ func (n *Network) ipamAllocateVersion(ipVer int, ipam ipamapi.Ipam) error {
 					return types.ForbiddenErrorf("auxiliary address: (%s:%s) must belong to the master pool: %s", k, v, d.Pool)
 				}
 				// Attempt reservation in the container addressable pool, silent the error if address does not belong to that pool
-				if d.IPAMData.AuxAddresses[k], _, err = ipam.RequestAddress(d.PoolID, ip, nil); err != nil && err != ipamapi.ErrIPOutOfRange {
+				if d.IPAMData.AuxAddresses[k], _, err = ipam.RequestAddress(d.PoolID, ip, nil); err != nil && !errors.Is(err, ipamapi.ErrIPOutOfRange) {
 					return types.InternalErrorf("failed to allocate secondary ip address (%s:%s): %v", k, v, err)
 				}
 			}
@@ -1673,7 +1673,7 @@ func (n *Network) ipamReleaseVersion(ipVer int, ipam ipamapi.Ipam) {
 		if d.IPAMData.AuxAddresses != nil {
 			for k, nw := range d.IPAMData.AuxAddresses {
 				if d.Pool.Contains(nw.IP) {
-					if err := ipam.ReleaseAddress(d.PoolID, nw.IP); err != nil && err != ipamapi.ErrIPOutOfRange {
+					if err := ipam.ReleaseAddress(d.PoolID, nw.IP); err != nil && !errors.Is(err, ipamapi.ErrIPOutOfRange) {
 						log.G(context.TODO()).Warnf("Failed to release secondary ip address %s (%v) on delete of network %s (%s): %v", k, nw.IP, n.Name(), n.ID(), err)
 					}
 				}

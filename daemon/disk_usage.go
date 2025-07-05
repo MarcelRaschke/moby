@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/docker/docker/api/server/router/system"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	systemtypes "github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
+	"github.com/docker/docker/daemon/server/router/system"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )
@@ -57,9 +57,8 @@ func (daemon *Daemon) imageDiskUsage(ctx context.Context) ([]*image.Summary, err
 	imgs, _, err := daemon.usageImages.Do(ctx, struct{}{}, func(ctx context.Context) ([]*image.Summary, error) {
 		// Get all top images with extra attributes
 		imgs, err := daemon.imageService.Images(ctx, image.ListOptions{
-			Filters:        filters.NewArgs(),
-			SharedSize:     true,
-			ContainerCount: true,
+			Filters:    filters.NewArgs(),
+			SharedSize: true,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to retrieve image list")

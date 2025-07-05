@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG GO_VERSION=1.24.3
+ARG GO_VERSION=1.24.4
 ARG BASE_DEBIAN_DISTRO="bookworm"
 ARG GOLANG_IMAGE="golang:${GO_VERSION}-${BASE_DEBIAN_DISTRO}"
 ARG XX_VERSION=1.6.1
@@ -209,7 +209,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
      && /build/golangci-lint --version
 
 FROM base AS gotestsum
-ARG GOTESTSUM_VERSION=v1.12.0
+# GOTESTSUM_VERSION is the version of gotest.tools/gotestsum to install.
+ARG GOTESTSUM_VERSION=v1.12.3
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
         GOBIN=/build/ GO111MODULE=on go install "gotest.tools/gotestsum@${GOTESTSUM_VERSION}" \
@@ -549,7 +550,8 @@ RUN --mount=type=cache,sharing=locked,id=moby-build-aptlib,target=/var/lib/apt \
         apt-get update && apt-get install --no-install-recommends -y \
             clang \
             lld \
-            llvm
+            llvm \
+            icoutils
 ARG TARGETPLATFORM
 RUN --mount=type=cache,sharing=locked,id=moby-build-aptlib,target=/var/lib/apt \
     --mount=type=cache,sharing=locked,id=moby-build-aptcache,target=/var/cache/apt \
@@ -579,7 +581,6 @@ RUN <<EOT
   fi
 EOT
 RUN --mount=type=bind,target=.,rw \
-    --mount=type=tmpfs,target=cli/winresources/dockerd \
     --mount=type=cache,target=/root/.cache/go-build,id=moby-build-$TARGETPLATFORM <<EOT
   set -e
   target=$([ "$DOCKER_STATIC" = "1" ] && echo "binary" || echo "dynbinary")

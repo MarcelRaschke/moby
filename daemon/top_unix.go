@@ -12,9 +12,9 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
+	libcontainerdtypes "github.com/docker/docker/daemon/internal/libcontainerd/types"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/internal/lazyregexp"
-	libcontainerdtypes "github.com/docker/docker/libcontainerd/types"
 	"github.com/pkg/errors"
 )
 
@@ -79,7 +79,7 @@ func parsePSOutput(output []byte, procs []uint32) (*container.TopResponse, error
 		}
 	}
 	if pidIndex == -1 {
-		return nil, fmt.Errorf("Couldn't find PID field in ps output")
+		return nil, errors.New("Couldn't find PID field in ps output")
 	}
 
 	// loop through the output and extract the PID from each line
@@ -87,7 +87,7 @@ func parsePSOutput(output []byte, procs []uint32) (*container.TopResponse, error
 	// in "docker top" client command
 	preContainedPidFlag := false
 	for _, line := range lines[1:] {
-		if len(line) == 0 {
+		if line == "" {
 			continue
 		}
 		fields := fieldsASCII(line)

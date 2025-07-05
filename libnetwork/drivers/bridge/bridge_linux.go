@@ -19,8 +19,10 @@ import (
 	"github.com/docker/docker/libnetwork/driverapi"
 	"github.com/docker/docker/libnetwork/drivers/bridge/internal/firewaller"
 	"github.com/docker/docker/libnetwork/drivers/bridge/internal/iptabler"
+	"github.com/docker/docker/libnetwork/drivers/bridge/internal/nftabler"
 	"github.com/docker/docker/libnetwork/drivers/bridge/internal/rlkclient"
 	"github.com/docker/docker/libnetwork/internal/netiputil"
+	"github.com/docker/docker/libnetwork/internal/nftables"
 	"github.com/docker/docker/libnetwork/iptables"
 	"github.com/docker/docker/libnetwork/netlabel"
 	"github.com/docker/docker/libnetwork/netutils"
@@ -123,17 +125,18 @@ type connectivityConfiguration struct {
 }
 
 type bridgeEndpoint struct {
-	id              string
-	nid             string
-	srcName         string
-	addr            *net.IPNet
-	addrv6          *net.IPNet
-	macAddress      net.HardwareAddr
-	containerConfig *containerConfiguration
-	extConnConfig   *connectivityConfiguration
-	portMapping     []portBinding // Operational port bindings
-	dbIndex         uint64
-	dbExists        bool
+	id               string
+	nid              string
+	srcName          string
+	addr             *net.IPNet
+	addrv6           *net.IPNet
+	macAddress       net.HardwareAddr
+	containerConfig  *containerConfiguration
+	extConnConfig    *connectivityConfiguration
+	portMapping      []portBinding   // Operational port bindings
+	portBindingState portBindingMode // Not persisted, even on live-restore port mappings are re-created.
+	dbIndex          uint64
+	dbExists         bool
 }
 
 type bridgeNetwork struct {
@@ -544,6 +547,9 @@ func (d *driver) configure(option map[string]interface{}) error {
 }
 
 var newFirewaller = func(ctx context.Context, config firewaller.Config) (firewaller.Firewaller, error) {
+	if nftables.Enabled() {
+		return nftabler.NewNftabler(ctx, config)
+	}
 	return iptabler.NewIptabler(ctx, config)
 }
 
@@ -669,7 +675,7 @@ func parseNetworkOptions(id string, option options.Generic) (*networkConfigurati
 	}
 
 	if (config.GwModeIPv4.isolated() || config.GwModeIPv6.isolated()) && !config.Internal {
-		return nil, fmt.Errorf("gateway mode 'isolated' can only be used for an internal network")
+		return nil, errors.New("gateway mode 'isolated' can only be used for an internal network")
 	}
 
 	if !exists {
@@ -956,7 +962,7 @@ func (d *driver) deleteNetwork(nid string) error {
 		// it's not in d.networks. To prevent the driver's state from getting out of step
 		// with its parent, make sure it's not in the store before reporting that it does
 		// not exist.
-		if err := d.storeDelete(&networkConfiguration{ID: nid}); err != nil && err != datastore.ErrKeyNotFound {
+		if err := d.storeDelete(&networkConfiguration{ID: nid}); err != nil && !errors.Is(err, datastore.ErrKeyNotFound) {
 			log.G(context.TODO()).WithFields(log.Fields{
 				"error":   err,
 				"network": nid,
@@ -1483,10 +1489,17 @@ func (d *driver) Leave(nid, eid string) error {
 	return nil
 }
 
-func (d *driver) ProgramExternalConnectivity(ctx context.Context, nid, eid string, options map[string]interface{}) error {
+type portBindingMode struct {
+	ipv4 bool
+	ipv6 bool
+}
+
+func (d *driver) ProgramExternalConnectivity(ctx context.Context, nid, eid string, options map[string]interface{}, gw4Id, gw6Id string) error {
 	ctx, span := otel.Tracer("").Start(ctx, spanPrefix+".ProgramExternalConnectivity", trace.WithAttributes(
 		attribute.String("nid", nid),
-		attribute.String("eid", eid)))
+		attribute.String("eid", eid),
+		attribute.String("gw4", gw4Id),
+		attribute.String("gw6", gw6Id)))
 	defer span.End()
 
 	// Make sure the network isn't deleted, or in the middle of a firewalld reload, while
@@ -1513,15 +1526,26 @@ func (d *driver) ProgramExternalConnectivity(ctx context.Context, nid, eid strin
 		return err
 	}
 
+	var pbmReq portBindingMode
+	// Act as the IPv4 gateway if explicitly selected.
+	if gw4Id == eid {
+		pbmReq.ipv4 = true
+	}
+	// Act as the IPv6 gateway if explicitly selected - or if there's no IPv6
+	// gateway, but this endpoint is the IPv4 gateway (in which case, the userland
+	// proxy may proxy between host v6 and container v4 addresses.)
+	if gw6Id == eid || (gw6Id == "" && gw4Id == eid) {
+		pbmReq.ipv6 = true
+	}
+
 	// Program any required port mapping and store them in the endpoint
 	if endpoint.extConnConfig != nil && endpoint.extConnConfig.PortBindings != nil {
 		endpoint.portMapping, err = network.addPortMappings(
 			ctx,
-			endpoint.addr,
-			endpoint.addrv6,
+			endpoint,
 			endpoint.extConnConfig.PortBindings,
 			network.config.DefaultBindingIP,
-			endpoint.extConnConfig.NoProxy6To4,
+			pbmReq,
 		)
 		if err != nil {
 			return err
@@ -1537,6 +1561,9 @@ func (d *driver) ProgramExternalConnectivity(ctx context.Context, nid, eid strin
 			endpoint.portMapping = nil
 		}
 	}()
+
+	// Remember the new port binding state.
+	endpoint.portBindingState = pbmReq
 
 	// Clean the connection tracker state of the host for the specific endpoint. This is needed because some flows may
 	// be bound to the local proxy, or to the host (for UDP packets), and won't be redirected to the new endpoints.
@@ -1828,14 +1855,6 @@ func parseConnectivityOptions(cOptions map[string]interface{}) (*connectivityCon
 			cc.ExposedPorts = ports
 		} else {
 			return nil, types.InvalidParameterErrorf("invalid exposed ports data in connectivity configuration: %v", opt)
-		}
-	}
-
-	if opt, ok := cOptions[netlabel.NoProxy6To4]; ok {
-		if noProxy6To4, ok := opt.(bool); ok {
-			cc.NoProxy6To4 = noProxy6To4
-		} else {
-			return nil, types.InvalidParameterErrorf("invalid "+netlabel.NoProxy6To4+" in connectivity configuration: %v", opt)
 		}
 	}
 

@@ -14,7 +14,7 @@ import (
 	statsV1 "github.com/containerd/cgroups/v3/cgroup1/stats"
 	statsV2 "github.com/containerd/cgroups/v3/cgroup2/stats"
 	containertypes "github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/container"
+	"github.com/docker/docker/daemon/container"
 	"github.com/pkg/errors"
 )
 
@@ -348,7 +348,7 @@ func readSystemCPUUsage(r io.Reader) (cpuUsage uint64, cpuNum uint32, _ error) {
 		if line[3] == ' ' {
 			parts := strings.Fields(line)
 			if len(parts) < 8 {
-				return 0, 0, fmt.Errorf("invalid number of cpu fields")
+				return 0, 0, errors.New("invalid number of cpu fields")
 			}
 			var totalClockTicks uint64
 			for _, i := range parts[1:8] {
